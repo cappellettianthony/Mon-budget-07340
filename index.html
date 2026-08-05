@@ -757,6 +757,75 @@
           <button class="btn btn-success" onclick="openNewEntryModal()">+ Nouvelle entrée</button>
           <button class="btn btn-outline" onclick="syncAllAutomatic(true)">Synchroniser fixes & budgets</button>
         </div>
+
+        <div class="card" style="background:var(--bg);margin-bottom:1rem;padding:1rem;box-shadow:none">
+          <h2 style="font-size:1rem;margin-bottom:0.8rem">Filtres</h2>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="filter-type">Type d'événement</label>
+              <select id="filter-type" onchange="renderTracking()">
+                <option value="">Tous les types</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="filter-sens">Sens</label>
+              <select id="filter-sens" onchange="renderTracking()">
+                <option value="">Tous</option>
+                <option value="debit">Débit uniquement</option>
+                <option value="credit">Crédit uniquement</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="filter-source">Source</label>
+              <select id="filter-source" onchange="renderTracking()">
+                <option value="">Toutes</option>
+                <option value="manual">Manuel</option>
+                <option value="fixed">Fixe</option>
+                <option value="budget">Budget</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="filter-amount-min">Montant min (€)</label>
+              <input type="number" id="filter-amount-min" step="0.01" min="0" placeholder="0" oninput="renderTracking()">
+            </div>
+            <div class="form-group">
+              <label for="filter-amount-max">Montant max (€)</label>
+              <input type="number" id="filter-amount-max" step="0.01" min="0" placeholder="∞" oninput="renderTracking()">
+            </div>
+            <div class="form-group">
+              <label for="filter-date-from">Du</label>
+              <input type="date" id="filter-date-from" onchange="renderTracking()">
+            </div>
+            <div class="form-group">
+              <label for="filter-date-to">Au</label>
+              <input type="date" id="filter-date-to" onchange="renderTracking()">
+            </div>
+            <div class="form-group">
+              <label for="filter-search">Recherche (texte)</label>
+              <input type="text" id="filter-search" placeholder="Nom / type…" oninput="renderTracking()">
+            </div>
+          </div>
+          <div class="actions" style="margin-top:0.8rem;margin-bottom:0">
+            <button class="btn btn-outline btn-sm" onclick="resetTrackingFilters()">Réinitialiser les filtres</button>
+            <span class="info-text" id="filter-summary" style="margin:0;align-self:center"></span>
+          </div>
+        </div>
+
+        <div class="balance-grid" style="margin-bottom:1rem" id="tracking-totals">
+          <div class="balance-box">
+            <div class="label">Total débits (filtrés)</div>
+            <div class="amount negative" id="filter-total-debit">0,00 €</div>
+          </div>
+          <div class="balance-box">
+            <div class="label">Total crédits (filtrés)</div>
+            <div class="amount positive" id="filter-total-credit">0,00 €</div>
+          </div>
+          <div class="balance-box">
+            <div class="label">Solde filtré</div>
+            <div class="amount" id="filter-total-net">0,00 €</div>
+          </div>
+        </div>
+
         <div class="table-wrap">
           <table>
             <thead>
@@ -1623,13 +1692,110 @@
       }).join('');
     }
 
+    function populateTypeFilter() {
+      const select = document.getElementById('filter-type');
+      if (!select) return;
+      const current = select.value;
+      // Types issus des paramètres + types présents dans les transactions
+      const fromTx = (state.transactions || []).map(t => t.type).filter(Boolean);
+      const allTypes = [...new Set([...(state.eventTypes || []), ...fromTx])].sort((a, b) =>
+        a.localeCompare(b, 'fr')
+      );
+      select.innerHTML = '<option value="">Tous les types</option>' +
+        allTypes.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+      if (current && allTypes.includes(current)) select.value = current;
+    }
+
+    function getTrackingFilters() {
+      const type = document.getElementById('filter-type')?.value || '';
+      const sens = document.getElementById('filter-sens')?.value || '';
+      const source = document.getElementById('filter-source')?.value || '';
+      const minRaw = document.getElementById('filter-amount-min')?.value;
+      const maxRaw = document.getElementById('filter-amount-max')?.value;
+      const dateFrom = document.getElementById('filter-date-from')?.value || '';
+      const dateTo = document.getElementById('filter-date-to')?.value || '';
+      const search = (document.getElementById('filter-search')?.value || '').trim().toLowerCase();
+      const amountMin = minRaw !== '' && minRaw != null ? parseFloat(minRaw) : null;
+      const amountMax = maxRaw !== '' && maxRaw != null ? parseFloat(maxRaw) : null;
+      return { type, sens, source, amountMin, amountMax, dateFrom, dateTo, search };
+    }
+
+    function filterTransactions(list) {
+      const f = getTrackingFilters();
+      return list.filter(t => {
+        if (f.type && t.type !== f.type) return false;
+        if (f.sens === 'debit' && !t.isDebit) return false;
+        if (f.sens === 'credit' && t.isDebit) return false;
+        if (f.source && (t.source || 'manual') !== f.source) return false;
+        if (f.amountMin != null && !isNaN(f.amountMin) && t.amount < f.amountMin) return false;
+        if (f.amountMax != null && !isNaN(f.amountMax) && t.amount > f.amountMax) return false;
+        if (f.dateFrom && t.date < f.dateFrom) return false;
+        if (f.dateTo && t.date > f.dateTo) return false;
+        if (f.search) {
+          const hay = `${t.type || ''} ${t.amount} ${t.date}`.toLowerCase();
+          if (!hay.includes(f.search)) return false;
+        }
+        return true;
+      });
+    }
+
+    function resetTrackingFilters() {
+      const ids = [
+        'filter-type', 'filter-sens', 'filter-source',
+        'filter-amount-min', 'filter-amount-max',
+        'filter-date-from', 'filter-date-to', 'filter-search'
+      ];
+      ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      renderTracking();
+    }
+
     function renderTracking() {
       const tbody = document.getElementById('tracking-body');
-      if (state.transactions.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="empty">Aucune opération enregistrée</td></tr>';
+      if (!tbody) return;
+
+      populateTypeFilter();
+
+      const all = state.transactions || [];
+      const filtered = filterTransactions(all);
+
+      // Totaux filtrés
+      let totalDebit = 0;
+      let totalCredit = 0;
+      for (const t of filtered) {
+        if (t.isDebit) totalDebit += t.amount;
+        else totalCredit += t.amount;
+      }
+      const net = totalCredit - totalDebit;
+
+      const setAmt = (id, val, forceClass) => {
+        const node = document.getElementById(id);
+        if (!node) return;
+        node.textContent = formatMoney(val);
+        if (forceClass) node.className = 'amount ' + forceClass;
+        else node.className = 'amount ' + (val >= 0 ? 'positive' : 'negative');
+      };
+      setAmt('filter-total-debit', totalDebit, 'negative');
+      setAmt('filter-total-credit', totalCredit, 'positive');
+      setAmt('filter-total-net', net);
+
+      const summary = document.getElementById('filter-summary');
+      if (summary) {
+        summary.textContent = filtered.length === all.length
+          ? `${all.length} opération(s)`
+          : `${filtered.length} sur ${all.length} opération(s)`;
+      }
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="empty">${
+          all.length === 0 ? 'Aucune opération enregistrée' : 'Aucune opération ne correspond aux filtres'
+        }</td></tr>`;
         return;
       }
-      tbody.innerHTML = state.transactions.map(t => {
+
+      tbody.innerHTML = filtered.map(t => {
         let sourceBadge = 'Manuel';
         if (t.source === 'fixed') sourceBadge = '<span class="badge badge-fixed">Fixe</span>';
         if (t.source === 'budget') sourceBadge = '<span class="badge badge-budget">Budget</span>';
@@ -2421,7 +2587,9 @@
       handleAuth,
       handleLogout,
       addAuthorizedUser,
-      removeAuthorizedUser
+      removeAuthorizedUser,
+      renderTracking,
+      resetTrackingFilters
     });
 
     // ========== INIT ==========

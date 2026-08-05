@@ -461,11 +461,150 @@
       background: #fce7f3;
       color: #9d174d;
     }
+
+    .badge-admin {
+      background: #ede9fe;
+      color: #6d28d9;
+    }
+
+    .badge-user {
+      background: #e0f2fe;
+      color: #0369a1;
+    }
+
+    /* Écran de connexion */
+    #login-screen {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(135deg, #1e4260, #2c5f8a);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 1rem;
+    }
+
+    #login-screen.hidden {
+      display: none;
+    }
+
+    .login-card {
+      background: white;
+      border-radius: 12px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+    }
+
+    .login-card h2 {
+      color: var(--primary-dark);
+      margin-bottom: 0.3rem;
+      font-size: 1.3rem;
+    }
+
+    .login-card .subtitle {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .login-error {
+      background: var(--danger-bg);
+      color: var(--danger);
+      padding: 0.6rem 0.8rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      margin-bottom: 1rem;
+      display: none;
+    }
+
+    .login-error.visible {
+      display: block;
+    }
+
+    .login-tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1.2rem;
+    }
+
+    .login-tabs button {
+      flex: 1;
+      padding: 0.5rem;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+
+    .login-tabs button.active {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+
+    #app-shell {
+      display: none;
+    }
+
+    #app-shell.visible {
+      display: block;
+    }
+
+    .user-bar {
+      font-size: 0.8rem;
+      opacity: 0.9;
+      margin-top: 0.4rem;
+    }
+
+    .user-bar button {
+      background: rgba(255,255,255,0.2);
+      border: none;
+      color: white;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.75rem;
+      margin-left: 0.5rem;
+    }
   </style>
 </head>
 <body>
+  <!-- Écran de connexion -->
+  <div id="login-screen">
+    <div class="login-card">
+      <h2>Gestion Compte & Budget</h2>
+      <p class="subtitle">Connexion requise pour accéder à l'application</p>
+      <div class="login-error" id="login-error"></div>
+      <div class="login-tabs">
+        <button type="button" class="active" id="tab-login" onclick="switchAuthTab('login')">Connexion</button>
+        <button type="button" id="tab-register" onclick="switchAuthTab('register')">Créer un compte</button>
+      </div>
+      <div class="form-group" style="margin-bottom:0.8rem">
+        <label for="auth-email">Email</label>
+        <input type="email" id="auth-email" placeholder="votre@email.com" autocomplete="username">
+      </div>
+      <div class="form-group" style="margin-bottom:0.8rem">
+        <label for="auth-password">Mot de passe</label>
+        <input type="password" id="auth-password" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <div class="form-group" id="auth-name-group" style="margin-bottom:0.8rem;display:none">
+        <label for="auth-name">Nom complet</label>
+        <input type="text" id="auth-name" placeholder="Prénom NOM">
+      </div>
+      <button class="btn btn-primary" style="width:100%;margin-top:0.5rem" id="auth-submit" onclick="handleAuth()">Se connecter</button>
+      <p class="info-text" style="margin-top:1rem;text-align:center">
+        Seuls les emails autorisés par un administrateur peuvent se connecter.
+      </p>
+    </div>
+  </div>
+
+  <div id="app-shell">
   <header>
     <h1>Gestion Compte & Budget</h1>
+    <div class="user-bar" id="user-bar"></div>
     <nav>
       <button data-page="home" class="active">Accueil</button>
       <button data-page="fixed">Charges & Entrées fixes</button>
@@ -688,6 +827,49 @@
     <!-- ========== PARAMÉTRAGE ========== -->
     <section id="params" class="page">
       <div class="card">
+        <h2>Utilisateurs autorisés</h2>
+        <p class="info-text" style="margin-bottom:1rem">
+          Seules ces personnes peuvent se connecter. <strong>Admin</strong> : accès complet (paramètres inclus).
+          <strong>Utilisateur</strong> : utilisation et modification des données, sans accès aux paramètres.
+        </p>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="auth-user-name">Nom</label>
+            <input type="text" id="auth-user-name" placeholder="Prénom NOM">
+          </div>
+          <div class="form-group">
+            <label for="auth-user-email">Email</label>
+            <input type="email" id="auth-user-email" placeholder="email@exemple.com">
+          </div>
+          <div class="form-group">
+            <label for="auth-user-role">Rôle</label>
+            <select id="auth-user-role">
+              <option value="user">Utilisateur</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+        </div>
+        <div class="actions" style="margin-top:0.8rem">
+          <button class="btn btn-success" onclick="addAuthorizedUser()">Ajouter l'utilisateur</button>
+        </div>
+        <div class="table-wrap" style="margin-top:1rem">
+          <table>
+            <thead>
+              <tr>
+                <th>Nom</th>
+                <th>Email</th>
+                <th>Rôle</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="authorized-users-body">
+              <tr><td colspan="4" class="empty">Aucun utilisateur</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
         <h2>Solde initial</h2>
         <div class="form-grid">
           <div class="form-group">
@@ -730,6 +912,7 @@
     Gestion Compte & Budget — Sauvegarde locale + Firebase en temps réel
     <span id="firebase-status" style="margin-left:0.5rem;font-size:0.75rem;opacity:0.8;">· connexion…</span>
   </footer>
+  </div><!-- /app-shell -->
 
   <!-- Modal Nouvelle entrée -->
   <div class="modal-overlay" id="modal-entry">
@@ -881,6 +1064,13 @@
       getDoc,
       onSnapshot
     } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
+    import {
+      getAuth,
+      signInWithEmailAndPassword,
+      createUserWithEmailAndPassword,
+      signOut,
+      onAuthStateChanged
+    } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCTXMPmRDjuAH8biTqc_b_X5LjIwCOiSAo",
@@ -893,10 +1083,18 @@
 
     const firebaseApp = initializeApp(firebaseConfig);
     const db = getFirestore(firebaseApp);
+    const auth = getAuth(firebaseApp);
     const docRef = doc(db, "budgetApp", "main");
 
     // ========== DATA ==========
     const STORAGE_KEY = 'budget_app_v2';
+
+    const DEFAULT_ADMIN = {
+      id: 'admin-anthony',
+      name: 'Anthony CAPPELLETTI',
+      email: 'cappellettianthony@gmail.com',
+      role: 'admin'
+    };
 
     let state = {
       initialBalance: 0,
@@ -904,12 +1102,22 @@
       fixedItems: [],
       budgets: [],
       transactions: [],
-      reminders: []
+      reminders: [],
+      authorizedUsers: [DEFAULT_ADMIN]
     };
 
-    let ignoreNextSnapshot = false; // évite la boucle lors de nos propres écritures
+    let currentUser = null; // { email, name, role }
+    let ignoreNextSnapshot = false;
     let firebaseReady = false;
     let saveTimeout = null;
+    let authReady = false;
+
+    function ensureAuthorizedUsers(list) {
+      if (!Array.isArray(list) || list.length === 0) return [DEFAULT_ADMIN];
+      const hasAnthony = list.some(u => (u.email || '').toLowerCase() === DEFAULT_ADMIN.email);
+      if (!hasAnthony) list = [DEFAULT_ADMIN, ...list];
+      return list;
+    }
 
     function loadFromLocal() {
       try {
@@ -919,12 +1127,13 @@
           state = { ...state, ...parsed };
           if (!state.budgets) state.budgets = [];
           if (!state.reminders) state.reminders = [];
+          state.authorizedUsers = ensureAuthorizedUsers(state.authorizedUsers);
           return true;
         }
         const old = localStorage.getItem('budget_app_v1');
         if (old) {
           const parsed = JSON.parse(old);
-          state = { ...state, ...parsed, budgets: [], reminders: [] };
+          state = { ...state, ...parsed, budgets: [], reminders: [], authorizedUsers: [DEFAULT_ADMIN] };
           return true;
         }
       } catch (e) {
@@ -941,9 +1150,9 @@
         fixedItems: Array.isArray(data.fixedItems) ? data.fixedItems : [],
         budgets: Array.isArray(data.budgets) ? data.budgets : [],
         transactions: Array.isArray(data.transactions) ? data.transactions : [],
-        reminders: Array.isArray(data.reminders) ? data.reminders : []
+        reminders: Array.isArray(data.reminders) ? data.reminders : [],
+        authorizedUsers: ensureAuthorizedUsers(data.authorizedUsers)
       };
-      // Miroir local
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     }
 
@@ -1074,7 +1283,29 @@
     }
 
     // ========== NAVIGATION ==========
+    function isAdmin() {
+      return currentUser && currentUser.role === 'admin';
+    }
+
+    function updateNavForRole() {
+      document.querySelectorAll('nav button').forEach(b => {
+        if (b.dataset.page === 'params') {
+          b.style.display = isAdmin() ? '' : 'none';
+        }
+      });
+      // Masquer aussi le bouton Paramétrage dans les actions rapides
+      document.querySelectorAll('button[onclick*="params"]').forEach(btn => {
+        if (!btn.closest('nav')) {
+          btn.style.display = isAdmin() ? '' : 'none';
+        }
+      });
+    }
+
     function showPage(pageId) {
+      if (pageId === 'params' && !isAdmin()) {
+        alert('Accès réservé aux administrateurs.');
+        pageId = 'home';
+      }
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
       document.getElementById(pageId).classList.add('active');
       document.querySelectorAll('nav button').forEach(b => {
@@ -1406,11 +1637,214 @@
       const list = document.getElementById('types-list');
       if (state.eventTypes.length === 0) {
         list.innerHTML = '<span class="info-text">Aucun type défini</span>';
+      } else {
+        list.innerHTML = state.eventTypes.map(t => `
+          <span class="tag">${escapeHtml(t)} <button onclick="removeEventType('${escapeHtml(t)}')" title="Supprimer">×</button></span>
+        `).join('');
+      }
+
+      // Utilisateurs autorisés
+      const tbody = document.getElementById('authorized-users-body');
+      const users = state.authorizedUsers || [];
+      if (users.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty">Aucun utilisateur</td></tr>';
+      } else {
+        tbody.innerHTML = users.map(u => {
+          const roleBadge = u.role === 'admin'
+            ? '<span class="badge badge-admin">Admin</span>'
+            : '<span class="badge badge-user">Utilisateur</span>';
+          const isSelf = currentUser && currentUser.email === (u.email || '').toLowerCase();
+          const canDelete = !isSelf; // ne pas se supprimer soi-même
+          return `
+            <tr>
+              <td>${escapeHtml(u.name || '—')}</td>
+              <td>${escapeHtml(u.email)}</td>
+              <td>${roleBadge}</td>
+              <td>
+                ${canDelete
+                  ? `<button class="btn btn-danger btn-sm" onclick="removeAuthorizedUser('${u.id}')">Supprimer</button>`
+                  : '<span class="info-text">Vous</span>'}
+              </td>
+            </tr>
+          `;
+        }).join('');
+      }
+    }
+
+    function addAuthorizedUser() {
+      if (!isAdmin()) {
+        alert('Action réservée aux administrateurs.');
         return;
       }
-      list.innerHTML = state.eventTypes.map(t => `
-        <span class="tag">${escapeHtml(t)} <button onclick="removeEventType('${escapeHtml(t)}')" title="Supprimer">×</button></span>
-      `).join('');
+      const name = document.getElementById('auth-user-name').value.trim();
+      const email = document.getElementById('auth-user-email').value.trim().toLowerCase();
+      const role = document.getElementById('auth-user-role').value;
+
+      if (!name || !email) {
+        alert('Nom et email obligatoires.');
+        return;
+      }
+      if (!email.includes('@')) {
+        alert('Email invalide.');
+        return;
+      }
+      if ((state.authorizedUsers || []).some(u => (u.email || '').toLowerCase() === email)) {
+        alert('Cet email est déjà autorisé.');
+        return;
+      }
+
+      state.authorizedUsers.push({
+        id: uid(),
+        name,
+        email,
+        role: role === 'admin' ? 'admin' : 'user'
+      });
+      saveState();
+      document.getElementById('auth-user-name').value = '';
+      document.getElementById('auth-user-email').value = '';
+      document.getElementById('auth-user-role').value = 'user';
+      renderParams();
+    }
+
+    function removeAuthorizedUser(id) {
+      if (!isAdmin()) {
+        alert('Action réservée aux administrateurs.');
+        return;
+      }
+      const user = (state.authorizedUsers || []).find(u => u.id === id);
+      if (!user) return;
+      if ((user.email || '').toLowerCase() === DEFAULT_ADMIN.email) {
+        // Autoriser la suppression d'Anthony seulement s'il reste un autre admin
+        const otherAdmins = state.authorizedUsers.filter(u => u.role === 'admin' && u.id !== id);
+        if (otherAdmins.length === 0) {
+          alert('Impossible de supprimer le dernier administrateur.');
+          return;
+        }
+      }
+      if (!confirm(`Retirer l'accès de ${user.name} (${user.email}) ?`)) return;
+      state.authorizedUsers = state.authorizedUsers.filter(u => u.id !== id);
+      saveState();
+      renderParams();
+    }
+
+    // ========== AUTHENTIFICATION ==========
+    let authMode = 'login'; // 'login' | 'register'
+
+    function switchAuthTab(mode) {
+      authMode = mode;
+      document.getElementById('tab-login').classList.toggle('active', mode === 'login');
+      document.getElementById('tab-register').classList.toggle('active', mode === 'register');
+      document.getElementById('auth-name-group').style.display = mode === 'register' ? '' : 'none';
+      document.getElementById('auth-submit').textContent = mode === 'login' ? 'Se connecter' : 'Créer le compte';
+      document.getElementById('login-error').classList.remove('visible');
+    }
+
+    function showLoginError(msg) {
+      const el = document.getElementById('login-error');
+      el.textContent = msg;
+      el.classList.add('visible');
+    }
+
+    function findAuthorizedByEmail(email) {
+      const e = (email || '').toLowerCase().trim();
+      return (state.authorizedUsers || []).find(u => (u.email || '').toLowerCase() === e);
+    }
+
+    async function handleAuth() {
+      const email = document.getElementById('auth-email').value.trim().toLowerCase();
+      const password = document.getElementById('auth-password').value;
+      const name = document.getElementById('auth-name').value.trim();
+
+      if (!email || !password) {
+        showLoginError('Email et mot de passe requis.');
+        return;
+      }
+      if (password.length < 6) {
+        showLoginError('Le mot de passe doit contenir au moins 6 caractères.');
+        return;
+      }
+
+      // Vérifier que l'email est autorisé (liste locale ou déjà chargée)
+      const authorized = findAuthorizedByEmail(email);
+      if (!authorized) {
+        showLoginError('Cet email n\'est pas autorisé. Contactez un administrateur.');
+        return;
+      }
+
+      try {
+        if (authMode === 'register') {
+          if (!name) {
+            showLoginError('Le nom est obligatoire pour créer un compte.');
+            return;
+          }
+          await createUserWithEmailAndPassword(auth, email, password);
+          // Mettre à jour le nom si besoin
+          if (authorized.name !== name) {
+            authorized.name = name;
+            saveState();
+          }
+        } else {
+          await signInWithEmailAndPassword(auth, email, password);
+        }
+        // onAuthStateChanged prendra le relais
+      } catch (err) {
+        console.warn(err);
+        let msg = 'Erreur de connexion.';
+        if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+          msg = 'Email ou mot de passe incorrect. Si c\'est votre première connexion, créez un compte.';
+        } else if (err.code === 'auth/email-already-in-use') {
+          msg = 'Un compte existe déjà avec cet email. Utilisez Connexion.';
+        } else if (err.code === 'auth/weak-password') {
+          msg = 'Mot de passe trop faible (min. 6 caractères).';
+        } else if (err.code === 'auth/invalid-email') {
+          msg = 'Email invalide.';
+        } else if (err.message) {
+          msg = err.message;
+        }
+        showLoginError(msg);
+      }
+    }
+
+    async function handleLogout() {
+      try {
+        await signOut(auth);
+      } catch (e) {
+        console.warn(e);
+      }
+      currentUser = null;
+      document.getElementById('login-screen').classList.remove('hidden');
+      document.getElementById('app-shell').classList.remove('visible');
+    }
+
+    function onUserAuthenticated(user) {
+      const email = (user.email || '').toLowerCase();
+      const authorized = findAuthorizedByEmail(email);
+      if (!authorized) {
+        signOut(auth);
+        showLoginError('Cet email n\'est plus autorisé.');
+        document.getElementById('login-screen').classList.remove('hidden');
+        document.getElementById('app-shell').classList.remove('visible');
+        return;
+      }
+
+      currentUser = {
+        email,
+        name: authorized.name,
+        role: authorized.role
+      };
+
+      document.getElementById('login-screen').classList.add('hidden');
+      document.getElementById('app-shell').classList.add('visible');
+
+      const bar = document.getElementById('user-bar');
+      if (bar) {
+        bar.innerHTML = `${escapeHtml(currentUser.name)} · ${currentUser.role === 'admin' ? 'Admin' : 'Utilisateur'}
+          <button type="button" onclick="handleLogout()">Déconnexion</button>`;
+      }
+
+      updateNavForRole();
+      renderHome();
+      setTimeout(() => showOpeningAlert(), 400);
     }
 
     // ========== RAPPELS ==========
@@ -1883,7 +2317,8 @@
         fixedItems: [],
         budgets: [],
         transactions: [],
-        reminders: []
+        reminders: [],
+        authorizedUsers: [DEFAULT_ADMIN]
       };
       try {
         ignoreNextSnapshot = true;
@@ -1935,7 +2370,12 @@
       removeEventType,
       exportData,
       resetAllData,
-      closeModal
+      closeModal,
+      switchAuthTab,
+      handleAuth,
+      handleLogout,
+      addAuthorizedUser,
+      removeAuthorizedUser
     });
 
     // ========== INIT ==========
@@ -1948,10 +2388,33 @@
       } catch (e) {
         setFirebaseStatus('mode local (Firebase indisponible)', false);
       }
-      syncAllAutomatic(false);
-      renderHome();
-      // Message d'alerte à l'ouverture si des rappels sont dans la fenêtre de 2 jours
-      setTimeout(() => showOpeningAlert(), 400);
+
+      // Attendre l'état d'authentification
+      onAuthStateChanged(auth, async (user) => {
+        authReady = true;
+        if (user) {
+          // Recharger state au cas où (liste utilisateurs à jour)
+          try {
+            const snap = await getDoc(docRef);
+            if (snap.exists()) applyRemoteState(snap.data());
+          } catch (e) { /* ignore */ }
+
+          const authorized = findAuthorizedByEmail(user.email);
+          if (!authorized) {
+            await signOut(auth);
+            showLoginError('Cet email n\'est pas autorisé à accéder à l\'application.');
+            document.getElementById('login-screen').classList.remove('hidden');
+            document.getElementById('app-shell').classList.remove('visible');
+            return;
+          }
+          onUserAuthenticated(user);
+          syncAllAutomatic(false);
+        } else {
+          currentUser = null;
+          document.getElementById('login-screen').classList.remove('hidden');
+          document.getElementById('app-shell').classList.remove('visible');
+        }
+      });
     })();
   </script>
 </body>

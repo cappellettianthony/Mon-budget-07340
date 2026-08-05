@@ -982,7 +982,7 @@
   </main>
 
   <footer>
-    Gestion Compte & Budget — Sauvegarde locale + Firebase en temps réel
+    Gestion Compte & Budget — Sauvegarde Firebase en temps réel
     <span id="firebase-status" style="margin-left:0.5rem;font-size:0.75rem;opacity:0.8;">· connexion…</span>
   </footer>
   </div><!-- /app-shell -->
@@ -1157,11 +1157,12 @@
     const firebaseApp = initializeApp(firebaseConfig);
     const db = getFirestore(firebaseApp);
     const auth = getAuth(firebaseApp);
+    // Données budget (nécessite auth)
     const docRef = doc(db, "budgetApp", "main");
+    // Liste des emails autorisés (lisible sans auth pour permettre la connexion)
+    const aclRef = doc(db, "budgetApp", "acl");
 
     // ========== DATA ==========
-    const STORAGE_KEY = 'budget_app_v2';
-
     const DEFAULT_ADMIN = {
       id: 'admin-anthony',
       name: 'Anthony CAPPELLETTI',
@@ -1189,34 +1190,17 @@
       if (!Array.isArray(list) || list.length === 0) return [DEFAULT_ADMIN];
       const hasAnthony = list.some(u => (u.email || '').toLowerCase() === DEFAULT_ADMIN.email);
       if (!hasAnthony) list = [DEFAULT_ADMIN, ...list];
-      return list;
-    }
-
-    function loadFromLocal() {
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          state = { ...state, ...parsed };
-          if (!state.budgets) state.budgets = [];
-          if (!state.reminders) state.reminders = [];
-          state.authorizedUsers = ensureAuthorizedUsers(state.authorizedUsers);
-          return true;
-        }
-        const old = localStorage.getItem('budget_app_v1');
-        if (old) {
-          const parsed = JSON.parse(old);
-          state = { ...state, ...parsed, budgets: [], reminders: [], authorizedUsers: [DEFAULT_ADMIN] };
-          return true;
-        }
-      } catch (e) {
-        console.warn('Erreur chargement localStorage', e);
-      }
-      return false;
+      // Normaliser les emails en minuscules
+      return list.map(u => ({
+        ...u,
+        email: (u.email || '').toLowerCase().trim()
+      }));
     }
 
     function applyRemoteState(data) {
       if (!data || typeof data !== 'object') return;
+      // Ne pas écraser authorizedUsers ici : géré via acl séparément
+      const keepUsers = state.authorizedUsers;
       state = {
         initialBalance: data.initialBalance ?? 0,
         eventTypes: Array.isArray(data.eventTypes) ? data.eventTypes : state.eventTypes,
@@ -1224,62 +1208,95 @@
         budgets: Array.isArray(data.budgets) ? data.budgets : [],
         transactions: Array.isArray(data.transactions) ? data.transactions : [],
         reminders: Array.isArray(data.reminders) ? data.reminders : [],
-        authorizedUsers: ensureAuthorizedUsers(data.authorizedUsers)
+        authorizedUsers: Array.isArray(data.authorizedUsers)
+          ? ensureAuthorizedUsers(data.authorizedUsers)
+          : keepUsers
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     }
 
-    function withTimeout(promise, ms = 2500) {
+    function withTimeout(promise, ms = 5000) {
       return Promise.race([
         promise,
         new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))
       ]);
     }
 
-    // Chargement local instantané
-    function loadState() {
-      loadFromLocal();
+    // Charge la liste ACL (emails autorisés) — doit être lisible sans connexion
+    async function loadAcl() {
+      try {
+        const snap = await withTimeout(getDoc(aclRef), 5000);
+        if (snap.exists() && Array.isArray(snap.data().users)) {
+          state.authorizedUsers = ensureAuthorizedUsers(snap.data().users);
+          return true;
+        }
+        // Premier lancement : créer l'ACL avec l'admin par défaut
+        state.authorizedUsers = [DEFAULT_ADMIN];
+        await setDoc(aclRef, {
+          users: state.authorizedUsers,
+          updatedAt: new Date().toISOString()
+        });
+        return true;
+      } catch (e) {
+        console.warn('Chargement ACL impossible', e);
+        state.authorizedUsers = ensureAuthorizedUsers(state.authorizedUsers);
+        return false;
+      }
     }
 
-    // Firebase en arrière-plan (ne bloque jamais l'UI)
+    async function saveAcl() {
+      try {
+        await setDoc(aclRef, {
+          users: ensureAuthorizedUsers(state.authorizedUsers),
+          updatedAt: new Date().toISOString()
+        });
+      } catch (e) {
+        console.warn('Erreur sauvegarde ACL', e);
+        throw e;
+      }
+    }
+
+    // Charge les données budget (après authentification)
     async function loadStateFromFirebase() {
       try {
-        const snap = await withTimeout(getDoc(docRef), 2500);
+        const snap = await withTimeout(getDoc(docRef), 5000);
         if (snap.exists()) {
           applyRemoteState(snap.data());
           console.log('Données chargées depuis Firebase');
         } else {
           ignoreNextSnapshot = true;
-          await withTimeout(setDoc(docRef, { ...state, updatedAt: new Date().toISOString() }), 2500);
-          console.log('Données locales initialisées sur Firebase');
+          const payload = { ...state };
+          delete payload.authorizedUsers; // ACL séparée
+          await withTimeout(setDoc(docRef, { ...payload, updatedAt: new Date().toISOString() }), 5000);
+          console.log('Données initialisées sur Firebase');
         }
         firebaseReady = true;
         setFirebaseStatus('Firebase connecté', true);
         return true;
       } catch (e) {
-        console.warn('Firebase indisponible ou lent, mode local', e);
+        console.warn('Firebase données indisponible', e);
         firebaseReady = false;
-        setFirebaseStatus('mode local', false);
+        setFirebaseStatus('Firebase erreur', false);
         return false;
       }
     }
 
     function saveState() {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-
-      if (!firebaseReady) return;
+      if (!firebaseReady && !auth.currentUser) return;
       clearTimeout(saveTimeout);
       saveTimeout = setTimeout(async () => {
         try {
           ignoreNextSnapshot = true;
+          const payload = { ...state };
+          delete payload.authorizedUsers; // stocké dans acl
           await setDoc(docRef, {
-            ...state,
+            ...payload,
             updatedAt: new Date().toISOString()
           });
+          firebaseReady = true;
         } catch (e) {
           console.warn('Erreur sauvegarde Firebase', e);
         }
-      }, 500);
+      }, 400);
     }
 
     let unsubscribeSnapshot = null;
@@ -1882,11 +1899,15 @@
         email,
         role: role === 'admin' ? 'admin' : 'user'
       });
-      saveState();
-      document.getElementById('auth-user-name').value = '';
-      document.getElementById('auth-user-email').value = '';
-      document.getElementById('auth-user-role').value = 'user';
-      renderParams();
+      saveAcl()
+        .then(() => {
+          document.getElementById('auth-user-name').value = '';
+          document.getElementById('auth-user-email').value = '';
+          document.getElementById('auth-user-role').value = 'user';
+          renderParams();
+          alert('Utilisateur ajouté. Il peut maintenant créer un compte / se connecter avec cet email.');
+        })
+        .catch(() => alert('Erreur lors de l\'enregistrement sur Firebase. Vérifiez les règles ACL.'));
     }
 
     function removeAuthorizedUser(id) {
@@ -1897,7 +1918,6 @@
       const user = (state.authorizedUsers || []).find(u => u.id === id);
       if (!user) return;
       if ((user.email || '').toLowerCase() === DEFAULT_ADMIN.email) {
-        // Autoriser la suppression d'Anthony seulement s'il reste un autre admin
         const otherAdmins = state.authorizedUsers.filter(u => u.role === 'admin' && u.id !== id);
         if (otherAdmins.length === 0) {
           alert('Impossible de supprimer le dernier administrateur.');
@@ -1906,8 +1926,9 @@
       }
       if (!confirm(`Retirer l'accès de ${user.name} (${user.email}) ?`)) return;
       state.authorizedUsers = state.authorizedUsers.filter(u => u.id !== id);
-      saveState();
-      renderParams();
+      saveAcl()
+        .then(() => renderParams())
+        .catch(() => alert('Erreur lors de la suppression sur Firebase.'));
     }
 
     // ========== AUTHENTIFICATION ==========
@@ -2520,9 +2541,8 @@
 
     async function resetAllData() {
       if (!confirm('Êtes-vous sûr de vouloir effacer TOUTES les données ? Cette action est irréversible.')) return;
-      if (!confirm('Dernière confirmation : tout sera perdu (local + Firebase).')) return;
-      localStorage.removeItem(STORAGE_KEY);
-      localStorage.removeItem('budget_app_v1');
+      if (!confirm('Dernière confirmation : les données Firebase budget seront effacées (pas la liste des utilisateurs).')) return;
+      const users = state.authorizedUsers;
       state = {
         initialBalance: 0,
         eventTypes: ['Courses', 'Salaire', 'Loyer', 'Abonnement', 'Transport', 'Loisirs', 'Autre'],
@@ -2530,14 +2550,17 @@
         budgets: [],
         transactions: [],
         reminders: [],
-        authorizedUsers: [DEFAULT_ADMIN]
+        authorizedUsers: users
       };
       try {
         ignoreNextSnapshot = true;
+        const payload = { ...state };
+        delete payload.authorizedUsers;
         await setDoc(docRef, {
-          ...state,
+          ...payload,
           updatedAt: new Date().toISOString()
         });
+        firebaseReady = true;
       } catch (e) {
         console.warn('Erreur reset Firebase', e);
       }
@@ -2547,7 +2570,7 @@
       renderTracking();
       renderReminders();
       renderParams();
-      alert('Données réinitialisées (local + cloud).');
+      alert('Données budget réinitialisées sur Firebase.');
     }
 
     function setFirebaseStatus(text, ok = true) {
@@ -2594,33 +2617,25 @@
 
     // ========== INIT ==========
     (async function init() {
-      // 1. Local d'abord (instantané)
-      loadState();
-
       if (location.protocol === 'file:') {
         const hint = document.getElementById('login-footer-hint');
         if (hint) {
-          hint.innerHTML = '<strong style="color:#c0392b">Attention :</strong> fichier ouvert en file://. Firebase Auth peut être lent. Préférez un serveur local ou un hébergement web.';
+          hint.innerHTML = '<strong style="color:#c0392b">Attention :</strong> fichier ouvert en file://. Préférez un serveur local ou un hébergement web.';
         }
       }
 
       setFirebaseStatus('connexion…', true);
 
-      // 2. Firebase en arrière-plan (ne bloque pas)
-      loadStateFromFirebase().then((ok) => {
-        if (ok) startRealtimeListener();
-        if (currentUser) {
-          updateNavForRole();
-          const active = document.querySelector('.page.active');
-          if (active && active.id === 'home') renderHome();
-        }
-      });
+      // 1. Charger la liste des emails autorisés (sans auth) — indispensable pour la connexion
+      await loadAcl();
 
-      // 3. Auth Firebase
+      // 2. Auth Firebase
       try {
-        onAuthStateChanged(auth, (user) => {
+        onAuthStateChanged(auth, async (user) => {
           authReady = true;
           if (user) {
+            // Recharger l'ACL au cas où
+            await loadAcl();
             const authorized = findAuthorizedByEmail(user.email);
             if (!authorized) {
               signOut(auth).catch(() => {});
@@ -2629,17 +2644,21 @@
               document.getElementById('app-shell').classList.remove('visible');
               return;
             }
+            // Charger les données budget puis afficher
+            await loadStateFromFirebase();
+            startRealtimeListener();
             onUserAuthenticated(user);
             setTimeout(() => syncAllAutomatic(false), 50);
           } else {
             currentUser = null;
             document.getElementById('login-screen').classList.remove('hidden');
             document.getElementById('app-shell').classList.remove('visible');
+            setFirebaseStatus('en attente de connexion', true);
           }
         });
       } catch (e) {
         console.warn('Auth init error', e);
-        setFirebaseStatus('mode local', false);
+        setFirebaseStatus('erreur Auth', false);
       }
     })();
   </script>

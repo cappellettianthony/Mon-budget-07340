@@ -2433,9 +2433,6 @@
       const today = todayISO();
 
       if (id) {
-        // Modification : définition mise à jour, historique (date <= aujourd'hui) intact.
-        // Seules les transactions futures (date > aujourd'hui) sont retirées pour être
-        // régénérées plus tard avec les nouveaux paramètres.
         state.transactions = state.transactions.filter(t =>
           !(t.source === 'budget' && t.budgetId === id && t.date > today)
         );
@@ -2449,11 +2446,9 @@
         saveState();
         closeModal('modal-budget');
         renderBudgets();
-        // Pas de sync de rattrapage du passé après modification
         renderHome();
         renderTracking();
       } else {
-        // Nouveau budget : rattrapage autorisé
         state.budgets.push({
           id: uid(),
           name,
@@ -2474,17 +2469,11 @@
     }
 
     function deleteBudget(id) {
-      if (!confirm('Supprimer ce budget ?\nLes débits déjà générés dans le suivi resteront (historique).')) return;
-      // Supprimer les transactions futures liées
-      const today = todayISO();
-      state.transactions = state.transactions.filter(t =>
-        !(t.source === 'budget' && t.budgetId === id && t.date > today)
-      );
+      if (!confirm('Supprimer ce budget ?\nLes opérations déjà générées dans le suivi resteront.')) return;
       state.budgets = state.budgets.filter(b => b.id !== id);
       saveState();
       renderBudgets();
       renderHome();
-      renderTracking();
     }
 
     function deleteTransaction(id) {
@@ -2495,20 +2484,23 @@
       renderHome();
     }
 
-    // ========== PARAMS ==========
     function saveInitialBalance() {
-      const val = parseFloat(document.getElementById('initial-balance').value);
-      if (isNaN(val)) {
-        alert('Veuillez entrer un montant valide.');
+      if (!isAdmin()) {
+        alert('Action réservée aux administrateurs.');
         return;
       }
-      state.initialBalance = val;
+      const val = parseFloat(document.getElementById('initial-balance').value);
+      state.initialBalance = isNaN(val) ? 0 : val;
       saveState();
       renderHome();
       alert('Solde initial enregistré.');
     }
 
     function addEventType() {
+      if (!isAdmin()) {
+        alert('Action réservée aux administrateurs.');
+        return;
+      }
       const input = document.getElementById('new-type');
       const val = input.value.trim();
       if (!val) return;
@@ -2517,150 +2509,108 @@
         return;
       }
       state.eventTypes.push(val);
-      saveState();
       input.value = '';
+      saveState();
       renderParams();
     }
 
-    function removeEventType(name) {
-      if (!confirm(`Supprimer le type « ${name} » ?`)) return;
-      state.eventTypes = state.eventTypes.filter(t => t !== name);
+    function removeEventType(type) {
+      if (!isAdmin()) {
+        alert('Action réservée aux administrateurs.');
+        return;
+      }
+      if (!confirm(`Supprimer le type "${type}" ?`)) return;
+      state.eventTypes = state.eventTypes.filter(t => t !== type);
       saveState();
       renderParams();
+    }
+
+    function setFirebaseStatus(text, isOk) {
+      const el = document.getElementById('firebase-status');
+      if (!el) return;
+      el.textContent = `· ${text}`;
+      el.style.color = isOk ? 'var(--success)' : 'var(--danger)';
     }
 
     function exportData() {
-      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `budget_export_${todayISO()}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `budget_backup_${todayISO()}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
     }
 
-    async function resetAllData() {
-      if (!confirm('Êtes-vous sûr de vouloir effacer TOUTES les données ? Cette action est irréversible.')) return;
-      if (!confirm('Dernière confirmation : les données Firebase budget seront effacées (pas la liste des utilisateurs).')) return;
-      const users = state.authorizedUsers;
-      state = {
-        initialBalance: 0,
-        eventTypes: ['Courses', 'Salaire', 'Loyer', 'Abonnement', 'Transport', 'Loisirs', 'Autre'],
-        fixedItems: [],
-        budgets: [],
-        transactions: [],
-        reminders: [],
-        authorizedUsers: users
-      };
-      try {
-        ignoreNextSnapshot = true;
-        const payload = { ...state };
-        delete payload.authorizedUsers;
-        await setDoc(docRef, {
-          ...payload,
-          updatedAt: new Date().toISOString()
-        });
-        firebaseReady = true;
-      } catch (e) {
-        console.warn('Erreur reset Firebase', e);
+    function resetAllData() {
+      if (!isAdmin()) {
+        alert('Action réservée aux administrateurs.');
+        return;
       }
+      if (!confirm('ATTENTION : Voulez-vous vraiment réinitialiser toutes les données ?')) return;
+      state.initialBalance = 0;
+      state.fixedItems = [];
+      state.budgets = [];
+      state.transactions = [];
+      state.reminders = [];
+      saveState();
       renderHome();
       renderFixed();
       renderBudgets();
       renderTracking();
       renderReminders();
       renderParams();
-      alert('Données budget réinitialisées sur Firebase.');
+      alert('Données réinitialisées.');
     }
 
-    function setFirebaseStatus(text, ok = true) {
-      const el = document.getElementById('firebase-status');
-      if (el) {
-        el.textContent = '· ' + text;
-        el.style.color = ok ? '#27ae60' : '#e67e22';
-      }
-    }
+    // Exposer les fonctions globales pour les événements HTML onclick
+    window.switchAuthTab = switchAuthTab;
+    window.handleAuth = handleAuth;
+    window.handleLogout = handleLogout;
+    window.showPage = showPage;
+    window.openNewEntryModal = openNewEntryModal;
+    window.openReminderModal = openReminderModal;
+    window.openFixedModal = openFixedModal;
+    window.openBudgetModal = openBudgetModal;
+    window.closeModal = closeModal;
+    window.saveEntry = saveEntry;
+    window.saveFixed = saveFixed;
+    window.editFixed = editFixed;
+    window.deleteFixed = deleteFixed;
+    window.saveBudget = saveBudget;
+    window.editBudget = editBudget;
+    window.deleteBudget = deleteBudget;
+    window.saveReminder = saveReminder;
+    window.editReminder = editReminder;
+    window.deleteReminder = deleteReminder;
+    window.deleteTransaction = deleteTransaction;
+    window.syncAllAutomatic = syncAllAutomatic;
+    window.resetTrackingFilters = resetTrackingFilters;
+    window.renderTracking = renderTracking;
+    window.saveInitialBalance = saveInitialBalance;
+    window.addEventType = addEventType;
+    window.removeEventType = removeEventType;
+    window.addAuthorizedUser = addAuthorizedUser;
+    window.removeAuthorizedUser = removeAuthorizedUser;
+    window.exportData = exportData;
+    window.resetAllData = resetAllData;
 
-    // Exposer les fonctions utilisées par les attributs onclick du HTML
-    Object.assign(window, {
-      showPage,
-      openNewEntryModal,
-      openFixedModal,
-      openBudgetModal,
-      openReminderModal,
-      saveEntry,
-      saveFixed,
-      saveBudget,
-      saveReminder,
-      editFixed,
-      editBudget,
-      editReminder,
-      deleteFixed,
-      deleteBudget,
-      deleteReminder,
-      deleteTransaction,
-      syncAllAutomatic,
-      saveInitialBalance,
-      addEventType,
-      removeEventType,
-      exportData,
-      resetAllData,
-      closeModal,
-      switchAuthTab,
-      handleAuth,
-      handleLogout,
-      addAuthorizedUser,
-      removeAuthorizedUser,
-      renderTracking,
-      resetTrackingFilters
-    });
-
-    // ========== INIT ==========
-    (async function init() {
-      if (location.protocol === 'file:') {
-        const hint = document.getElementById('login-footer-hint');
-        if (hint) {
-          hint.innerHTML = '<strong style="color:#c0392b">Attention :</strong> fichier ouvert en file://. Préférez un serveur local ou un hébergement web.';
-        }
-      }
-
-      setFirebaseStatus('connexion…', true);
-
-      // 1. Charger la liste des emails autorisés (sans auth) — indispensable pour la connexion
+    // Initialisation globale au chargement de la page
+    window.addEventListener('DOMContentLoaded', async () => {
       await loadAcl();
-
-      // 2. Auth Firebase
-      try {
-        onAuthStateChanged(auth, async (user) => {
-          authReady = true;
-          if (user) {
-            // Recharger l'ACL au cas où
-            await loadAcl();
-            const authorized = findAuthorizedByEmail(user.email);
-            if (!authorized) {
-              signOut(auth).catch(() => {});
-              showLoginError('Cet email n\'est pas autorisé à accéder à l\'application.');
-              document.getElementById('login-screen').classList.remove('hidden');
-              document.getElementById('app-shell').classList.remove('visible');
-              return;
-            }
-            // Charger les données budget puis afficher
-            await loadStateFromFirebase();
-            startRealtimeListener();
-            onUserAuthenticated(user);
-            setTimeout(() => syncAllAutomatic(false), 50);
-          } else {
-            currentUser = null;
-            document.getElementById('login-screen').classList.remove('hidden');
-            document.getElementById('app-shell').classList.remove('visible');
-            setFirebaseStatus('en attente de connexion', true);
-          }
-        });
-      } catch (e) {
-        console.warn('Auth init error', e);
-        setFirebaseStatus('erreur Auth', false);
-      }
-    })();
+      onAuthStateChanged(auth, async (user) => {
+        if (user) {
+          await loadStateFromFirebase();
+          startRealtimeListener();
+          onUserAuthenticated(user);
+        } else {
+          setFirebaseStatus('Non connecté', false);
+          document.getElementById('login-screen').classList.remove('hidden');
+          document.getElementById('app-shell').classList.remove('visible');
+        }
+      });
+    });
   </script>
 </body>
 </html>
+

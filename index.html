@@ -599,12 +599,8 @@
         <input type="text" id="auth-name" placeholder="Prénom NOM" value="Anthony CAPPELLETTI">
       </div>
       <button class="btn btn-primary" style="width:100%;margin-top:0.5rem" id="auth-submit" onclick="handleAuth()">Se connecter</button>
-      <button class="btn btn-outline" style="width:100%;margin-top:0.6rem" type="button" onclick="enterAsLocalAdmin()">
-        Accès Admin local (Anthony CAPPELLETTI)
-      </button>
       <p class="info-text" style="margin-top:1rem;text-align:center" id="login-footer-hint">
-        Seuls les emails autorisés peuvent se connecter.<br>
-        En cas de problème Firebase, utilisez le bouton <strong>Accès Admin local</strong>.
+        Seuls les emails autorisés peuvent se connecter.
       </p>
     </div>
   </div>
@@ -1308,45 +1304,6 @@
       return currentUser.role === 'admin';
     }
 
-    function enterAsLocalAdmin() {
-      // Accès de secours sans Firebase Auth — réservé à l'admin principal
-      currentUser = {
-        email: DEFAULT_ADMIN.email,
-        name: DEFAULT_ADMIN.name,
-        role: 'admin',
-        localOnly: true
-      };
-      try {
-        sessionStorage.setItem('budget_local_admin', '1');
-      } catch (e) { /* ignore */ }
-
-      if (!state.authorizedUsers) state.authorizedUsers = [];
-      if (!state.authorizedUsers.some(u => (u.email || '').toLowerCase() === DEFAULT_ADMIN.email)) {
-        state.authorizedUsers.unshift({ ...DEFAULT_ADMIN });
-      } else {
-        const u = state.authorizedUsers.find(x => (x.email || '').toLowerCase() === DEFAULT_ADMIN.email);
-        if (u) u.role = 'admin';
-      }
-      // Sauvegarde locale seulement (pas d'attente Firebase)
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-
-      document.getElementById('login-screen').classList.add('hidden');
-      document.getElementById('app-shell').classList.add('visible');
-
-      const bar = document.getElementById('user-bar');
-      if (bar) {
-        bar.innerHTML = `${escapeHtml(DEFAULT_ADMIN.name)} · Admin (local)
-          <button type="button" onclick="handleLogout()">Déconnexion</button>`;
-      }
-      updateNavForRole();
-      renderHome();
-      // Sync et alertes en différé pour afficher l'UI tout de suite
-      setTimeout(() => {
-        syncAllAutomatic(false);
-        showOpeningAlert();
-      }, 100);
-    }
-
     function updateNavForRole() {
       document.querySelectorAll('nav button').forEach(b => {
         if (b.dataset.page === 'params') {
@@ -1888,9 +1845,6 @@
     }
 
     async function handleLogout() {
-      try {
-        sessionStorage.removeItem('budget_local_admin');
-      } catch (e) { /* ignore */ }
       try {
         await signOut(auth);
       } catch (e) {
@@ -2466,7 +2420,6 @@
       switchAuthTab,
       handleAuth,
       handleLogout,
-      enterAsLocalAdmin,
       addAuthorizedUser,
       removeAuthorizedUser
     });
@@ -2479,25 +2432,15 @@
       if (location.protocol === 'file:') {
         const hint = document.getElementById('login-footer-hint');
         if (hint) {
-          hint.innerHTML = '<strong style="color:#c0392b">Attention :</strong> fichier ouvert en file://. Firebase Auth peut être lent ou échouer. Utilisez « Accès Admin local » ou un serveur local.';
+          hint.innerHTML = '<strong style="color:#c0392b">Attention :</strong> fichier ouvert en file://. Firebase Auth peut être lent. Préférez un serveur local ou un hébergement web.';
         }
-      }
-
-      // 2. Session admin locale : entrée immédiate, sans attendre Firebase
-      let localAdmin = false;
-      try {
-        localAdmin = sessionStorage.getItem('budget_local_admin') === '1';
-      } catch (e) { /* ignore */ }
-      if (localAdmin) {
-        enterAsLocalAdmin();
       }
 
       setFirebaseStatus('connexion…', true);
 
-      // 3. Firebase en arrière-plan (ne bloque pas)
+      // 2. Firebase en arrière-plan (ne bloque pas)
       loadStateFromFirebase().then((ok) => {
         if (ok) startRealtimeListener();
-        // Si on est déjà dans l'app, rafraîchir l'UI avec les données cloud
         if (currentUser) {
           updateNavForRole();
           const active = document.querySelector('.page.active');
@@ -2505,15 +2448,11 @@
         }
       });
 
-      // 4. Auth Firebase (peut être lent) — n'empêche pas l'accès local
+      // 3. Auth Firebase
       try {
         onAuthStateChanged(auth, (user) => {
           authReady = true;
           if (user) {
-            // Si déjà en admin local, ne pas écraser sauf si même email
-            if (currentUser && currentUser.localOnly) {
-              return;
-            }
             const authorized = findAuthorizedByEmail(user.email);
             if (!authorized) {
               signOut(auth).catch(() => {});
@@ -2523,9 +2462,9 @@
               return;
             }
             onUserAuthenticated(user);
-            // Sync légère en différé pour ne pas bloquer l'affichage
             setTimeout(() => syncAllAutomatic(false), 50);
-          } else if (!currentUser) {
+          } else {
+            currentUser = null;
             document.getElementById('login-screen').classList.remove('hidden');
             document.getElementById('app-shell').classList.remove('visible');
           }

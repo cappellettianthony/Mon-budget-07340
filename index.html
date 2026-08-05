@@ -578,25 +578,29 @@
       <h2>Gestion Compte & Budget</h2>
       <p class="subtitle">Connexion requise pour accéder à l'application</p>
       <div class="login-error" id="login-error"></div>
+      <div id="login-hint" class="info-text" style="margin-bottom:1rem;background:#eaf2f8;padding:0.7rem;border-radius:6px;color:#1e4260">
+        <strong>Première fois ?</strong> Cliquez sur <em>Créer un compte</em> avec votre email autorisé et un mot de passe d’au moins 6 caractères.<br>
+        <strong>Déjà inscrit ?</strong> Utilisez <em>Connexion</em>.
+      </div>
       <div class="login-tabs">
         <button type="button" class="active" id="tab-login" onclick="switchAuthTab('login')">Connexion</button>
         <button type="button" id="tab-register" onclick="switchAuthTab('register')">Créer un compte</button>
       </div>
       <div class="form-group" style="margin-bottom:0.8rem">
         <label for="auth-email">Email</label>
-        <input type="email" id="auth-email" placeholder="votre@email.com" autocomplete="username">
+        <input type="email" id="auth-email" placeholder="votre@email.com" autocomplete="username" value="cappellettianthony@gmail.com">
       </div>
       <div class="form-group" style="margin-bottom:0.8rem">
         <label for="auth-password">Mot de passe</label>
-        <input type="password" id="auth-password" placeholder="••••••••" autocomplete="current-password">
+        <input type="password" id="auth-password" placeholder="min. 6 caractères" autocomplete="current-password">
       </div>
       <div class="form-group" id="auth-name-group" style="margin-bottom:0.8rem;display:none">
         <label for="auth-name">Nom complet</label>
-        <input type="text" id="auth-name" placeholder="Prénom NOM">
+        <input type="text" id="auth-name" placeholder="Prénom NOM" value="Anthony CAPPELLETTI">
       </div>
       <button class="btn btn-primary" style="width:100%;margin-top:0.5rem" id="auth-submit" onclick="handleAuth()">Se connecter</button>
-      <p class="info-text" style="margin-top:1rem;text-align:center">
-        Seuls les emails autorisés par un administrateur peuvent se connecter.
+      <p class="info-text" style="margin-top:1rem;text-align:center" id="login-footer-hint">
+        Seuls les emails autorisés peuvent se connecter.
       </p>
     </div>
   </div>
@@ -1754,6 +1758,7 @@
       const email = document.getElementById('auth-email').value.trim().toLowerCase();
       const password = document.getElementById('auth-password').value;
       const name = document.getElementById('auth-name').value.trim();
+      const btn = document.getElementById('auth-submit');
 
       if (!email || !password) {
         showLoginError('Email et mot de passe requis.');
@@ -1764,21 +1769,32 @@
         return;
       }
 
-      // Vérifier que l'email est autorisé (liste locale ou déjà chargée)
-      const authorized = findAuthorizedByEmail(email);
+      // Toujours autoriser l'admin par défaut même si la liste cloud n'est pas encore chargée
+      let authorized = findAuthorizedByEmail(email);
+      if (!authorized && email === DEFAULT_ADMIN.email) {
+        authorized = DEFAULT_ADMIN;
+        if (!state.authorizedUsers) state.authorizedUsers = [];
+        if (!state.authorizedUsers.some(u => (u.email || '').toLowerCase() === DEFAULT_ADMIN.email)) {
+          state.authorizedUsers.unshift(DEFAULT_ADMIN);
+        }
+      }
       if (!authorized) {
         showLoginError('Cet email n\'est pas autorisé. Contactez un administrateur.');
         return;
       }
 
+      btn.disabled = true;
+      btn.textContent = 'Patientez…';
+
       try {
         if (authMode === 'register') {
           if (!name) {
             showLoginError('Le nom est obligatoire pour créer un compte.');
+            btn.disabled = false;
+            btn.textContent = 'Créer le compte';
             return;
           }
           await createUserWithEmailAndPassword(auth, email, password);
-          // Mettre à jour le nom si besoin
           if (authorized.name !== name) {
             authorized.name = name;
             saveState();
@@ -1788,20 +1804,30 @@
         }
         // onAuthStateChanged prendra le relais
       } catch (err) {
-        console.warn(err);
+        console.warn('Auth error:', err.code, err.message);
         let msg = 'Erreur de connexion.';
-        if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
-          msg = 'Email ou mot de passe incorrect. Si c\'est votre première connexion, créez un compte.';
-        } else if (err.code === 'auth/email-already-in-use') {
-          msg = 'Un compte existe déjà avec cet email. Utilisez Connexion.';
-        } else if (err.code === 'auth/weak-password') {
-          msg = 'Mot de passe trop faible (min. 6 caractères).';
-        } else if (err.code === 'auth/invalid-email') {
+        const code = err.code || '';
+        if (code === 'auth/user-not-found' || code === 'auth/invalid-credential' || code === 'auth/wrong-password') {
+          msg = 'Email ou mot de passe incorrect. Si c\'est votre première fois : onglet « Créer un compte ».';
+        } else if (code === 'auth/email-already-in-use') {
+          msg = 'Un compte existe déjà avec cet email. Passez sur l\'onglet « Connexion ».';
+        } else if (code === 'auth/weak-password') {
+          msg = 'Mot de passe trop faible (minimum 6 caractères).';
+        } else if (code === 'auth/invalid-email') {
           msg = 'Email invalide.';
+        } else if (code === 'auth/network-request-failed') {
+          msg = 'Erreur réseau. Vérifiez votre connexion internet, ou ouvrez le fichier via un serveur local (pas en file://).';
+        } else if (code === 'auth/operation-not-allowed') {
+          msg = 'Le fournisseur Email/Mot de passe n\'est pas activé dans la console Firebase (Authentication → Sign-in method).';
+        } else if (code === 'auth/too-many-requests') {
+          msg = 'Trop de tentatives. Réessayez dans quelques minutes.';
         } else if (err.message) {
           msg = err.message;
         }
         showLoginError(msg);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = authMode === 'login' ? 'Se connecter' : 'Créer le compte';
       }
     }
 
@@ -2380,6 +2406,14 @@
 
     // ========== INIT ==========
     (async function init() {
+      // Avertissement si ouvert en file:// (Firebase Auth échoue souvent)
+      if (location.protocol === 'file:') {
+        const hint = document.getElementById('login-footer-hint');
+        if (hint) {
+          hint.innerHTML = '<strong style="color:#c0392b">Attention :</strong> le fichier est ouvert en local (file://). Firebase Auth peut échouer. Préférez un hébergement web ou un serveur local (ex. Live Server).';
+        }
+      }
+
       setFirebaseStatus('connexion…', true);
       try {
         await loadState();

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gestion CBR Famille</title>
+  <title>Gestion Compte & Budget</title>
   <style>
     :root {
       --primary: #2c5f8a;
@@ -213,7 +213,7 @@
 <body>
   <div id="login-screen">
     <div class="login-card">
-      <h2>Gestion CBR Famille</h2>
+      <h2>Gestion Compte & Budget</h2>
       <p class="subtitle">Connexion par e-mail (Firebase Auth)</p>
       <div class="login-error" id="login-error"></div>
       <div class="login-tabs">
@@ -237,7 +237,7 @@
 
   <div id="app-shell">
   <header>
-    <h1>Gestion CBR Famille</h1>
+    <h1>Gestion Compte & Budget</h1>
     <div class="user-bar" id="user-bar"></div>
     <nav>
       <button data-page="home" class="active">Accueil</button>
@@ -306,8 +306,8 @@
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Nom</th><th>Montant</th><th>Jour</th><th>Type</th><th>Actions</th></tr></thead>
-            <tbody id="fixed-body"><tr><td colspan="5" class="empty">Aucune charge ou entrée fixe</td></tr></tbody>
+            <thead><tr><th>Nom</th><th>Montant</th><th>Jour</th><th>Début</th><th>Type</th><th>Actions</th></tr></thead>
+            <tbody id="fixed-body"><tr><td colspan="6" class="empty">Aucune charge ou entrée fixe</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -473,7 +473,7 @@
   </main>
 
   <footer>
-    Gestion CBR Famille — Firebase Realtime Database
+    Gestion Compte & Budget — Firebase Realtime Database
     <span id="firebase-status" style="margin-left:0.5rem;opacity:0.85">· connexion…</span>
   </footer>
   </div><!-- /app-shell -->
@@ -505,7 +505,8 @@
       <div class="form-grid">
         <div class="form-group"><label for="fixed-name">Nom</label><input type="text" id="fixed-name"></div>
         <div class="form-group"><label for="fixed-amount">Montant</label><input type="number" id="fixed-amount" step="0.01" min="0"></div>
-        <div class="form-group"><label for="fixed-day">Jour (1-31)</label><input type="number" id="fixed-day" min="1" max="31"></div>
+        <div class="form-group"><label for="fixed-day">Jour du mois (1-31)</label><input type="number" id="fixed-day" min="1" max="31"></div>
+        <div class="form-group"><label for="fixed-start">Date de début</label><input type="date" id="fixed-start"></div>
         <div class="form-group">
           <label>Type</label>
           <div class="checkbox-group"><input type="radio" name="fixed-sens" id="fixed-charge" checked><label for="fixed-charge">Charge</label></div>
@@ -822,7 +823,9 @@
       const from = new Date(fromDate + 'T12:00:00'), to = new Date(toDate + 'T12:00:00');
       for (let d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
         const day = d.getDate(), y = d.getFullYear(), m = d.getMonth(), maxDay = daysInMonth(y, m);
+        const dateStr = y + '-' + String(m + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
         for (const item of state.fixedItems) {
+          if (item.startDate && dateStr < item.startDate) continue;
           if (day === Math.min(item.day, maxDay)) net += item.isCharge ? -item.amount : item.amount;
         }
       }
@@ -860,15 +863,21 @@
       const today = todayISO();
       const [ty, tm] = today.split('-').map(Number);
       let added = 0;
-      for (let offset = -3; offset <= 0; offset++) {
+      // Parcourir suffisamment de mois pour couvrir la date de début de chaque fixe
+      for (let offset = -24; offset <= 0; offset++) {
         const d = new Date(ty, tm - 1 + offset, 1);
         const year = d.getFullYear(), month = d.getMonth(), maxDay = daysInMonth(year, month);
         for (const item of state.fixedItems) {
           const day = Math.min(item.day, maxDay);
           const dateStr = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
           if (dateStr > today) continue;
+          // Ne générer qu'à partir de la date de début (si définie)
+          if (item.startDate && dateStr < item.startDate) continue;
           if (!state.transactions.some(t => t.source === 'fixed' && t.fixedId === item.id && t.date === dateStr)) {
-            state.transactions.push({ id: uid(), date: dateStr, type: item.name, amount: item.amount, isDebit: item.isCharge, source: 'fixed', fixedId: item.id });
+            state.transactions.push({
+              id: uid(), date: dateStr, type: item.name, amount: item.amount,
+              isDebit: item.isCharge, source: 'fixed', fixedId: item.id
+            });
             added++;
           }
         }
@@ -927,11 +936,12 @@
       const tbody = document.getElementById('fixed-body');
       tbody.innerHTML = state.fixedItems.length ? state.fixedItems.map(item =>
         '<tr><td>' + escapeHtml(item.name) + '</td><td>' + formatMoney(item.amount) + '</td><td>' + item.day +
+        '</td><td>' + formatDate(item.startDate) +
         '</td><td><span class="badge ' + (item.isCharge ? 'badge-charge">Charge' : 'badge-entree">Entrée') +
         '</span></td><td><button class="btn btn-outline btn-sm" onclick="editFixed(\'' + item.id +
         '\')">Modifier</button> <button class="btn btn-danger btn-sm" onclick="deleteFixed(\'' + item.id +
         '\')">Supprimer</button></td></tr>'
-      ).join('') : '<tr><td colspan="5" class="empty">Aucune charge ou entrée fixe</td></tr>';
+      ).join('') : '<tr><td colspan="6" class="empty">Aucune charge ou entrée fixe</td></tr>';
     }
 
     function getBudgetEndDate(startDate, months) {
@@ -1015,7 +1025,7 @@
         return '<tr><td>' + formatDate(t.date) + '</td><td>' + escapeHtml(t.type) + '</td><td>' + formatMoney(t.amount) +
           '</td><td><span class="badge ' + (t.isDebit ? 'badge-charge">Débit' : 'badge-entree">Crédit') +
           '</span></td><td>' + src + '</td><td>' +
-          (t.source === 'manual' ? '<button class="btn btn-danger btn-sm" onclick="deleteTransaction(\'' + t.id + '\')">Supprimer</button>' : '—') +
+          '<button class="btn btn-danger btn-sm" onclick="deleteTransaction(\'' + t.id + '\')">Supprimer</button>' +
           '</td></tr>';
       }).join('');
     }
@@ -1104,12 +1114,14 @@
           document.getElementById('fixed-name').value = item.name;
           document.getElementById('fixed-amount').value = item.amount;
           document.getElementById('fixed-day').value = item.day;
+          document.getElementById('fixed-start').value = item.startDate || todayISO();
           document.getElementById(item.isCharge ? 'fixed-charge' : 'fixed-entree').checked = true;
         }
       } else {
         document.getElementById('fixed-name').value = '';
         document.getElementById('fixed-amount').value = '';
         document.getElementById('fixed-day').value = '';
+        document.getElementById('fixed-start').value = todayISO();
         document.getElementById('fixed-charge').checked = true;
       }
       openModal('modal-fixed');
@@ -1119,16 +1131,27 @@
       const name = document.getElementById('fixed-name').value.trim();
       const amount = parseFloat(document.getElementById('fixed-amount').value);
       const day = parseInt(document.getElementById('fixed-day').value, 10);
+      const startDate = document.getElementById('fixed-start').value;
       const isCharge = document.getElementById('fixed-charge').checked;
-      if (!name || isNaN(amount) || amount <= 0 || isNaN(day) || day < 1 || day > 31) { alert('Champs invalides.'); return; }
+      if (!name || isNaN(amount) || amount <= 0 || isNaN(day) || day < 1 || day > 31 || !startDate) {
+        alert('Champs invalides (nom, montant, jour et date de début requis).');
+        return;
+      }
       const today = todayISO();
       if (id) {
+        // Ne pas modifier les transactions passées ; retirer seulement le futur pour regénération
         state.transactions = state.transactions.filter(t => !(t.source === 'fixed' && t.fixedId === id && t.date > today));
         const item = state.fixedItems.find(i => i.id === id);
-        if (item) { item.name = name; item.amount = amount; item.day = day; item.isCharge = isCharge; }
+        if (item) {
+          item.name = name;
+          item.amount = amount;
+          item.day = day;
+          item.startDate = startDate;
+          item.isCharge = isCharge;
+        }
         saveState();
       } else {
-        state.fixedItems.push({ id: uid(), name, amount, day, isCharge });
+        state.fixedItems.push({ id: uid(), name, amount, day, startDate, isCharge });
         syncAllAutomatic(false);
       }
       closeModal('modal-fixed');

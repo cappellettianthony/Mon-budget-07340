@@ -402,8 +402,8 @@
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Date</th><th>Type</th><th>Montant</th><th>Sens</th><th>Commentaire</th><th>Source</th><th>Actions</th></tr></thead>
-            <tbody id="tracking-body"><tr><td colspan="7" class="empty">Aucune opération</td></tr></tbody>
+            <thead><tr><th>Date</th><th>Type</th><th>Montant</th><th>Sens</th><th>Source</th><th>Actions</th></tr></thead>
+            <tbody id="tracking-body"><tr><td colspan="6" class="empty">Aucune opération</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -474,14 +474,13 @@
 
   <footer>
     Gestion Compte & Budget — Firebase Realtime Database
-    <span id="firebase-status" style="margin-left:0.5rem;opacity:0.85">· connexion...</span>
+    <span id="firebase-status" style="margin-left:0.5rem;opacity:0.85">· connexion…</span>
   </footer>
   </div><!-- /app-shell -->
 
   <div class="modal-overlay" id="modal-entry">
     <div class="modal">
-      <h3 id="entry-modal-title">Nouvelle entrée</h3>
-      <input type="hidden" id="entry-edit-id">
+      <h3>Nouvelle entrée</h3>
       <div class="form-grid">
         <div class="form-group"><label for="entry-date">Date</label><input type="date" id="entry-date"></div>
         <div class="form-group"><label for="entry-type">Type</label><select id="entry-type"></select></div>
@@ -490,10 +489,6 @@
           <label>Sens</label>
           <div class="checkbox-group"><input type="radio" name="entry-sens" id="entry-debit" checked><label for="entry-debit">Débit</label></div>
           <div class="checkbox-group"><input type="radio" name="entry-sens" id="entry-credit"><label for="entry-credit">Crédit</label></div>
-        </div>
-        <div class="form-group" style="grid-column:1/-1">
-          <label for="entry-comment">Commentaire <span style="font-weight:400;color:var(--text-muted)">(optionnel)</span></label>
-          <input type="text" id="entry-comment" placeholder="Ex. : courses Carrefour, remboursement...">
         </div>
       </div>
       <div class="modal-actions">
@@ -723,7 +718,7 @@
         return;
       }
       btn.disabled = true;
-      btn.textContent = 'Patientez...';
+      btn.textContent = 'Patientez…';
       try {
         if (authMode === 'register') {
           await createUserWithEmailAndPassword(auth, email, password);
@@ -772,7 +767,7 @@
         bar.innerHTML = escapeHtml(user.email || '') +
           ' <button type="button" onclick="handleLogout()">Déconnexion</button>';
       }
-      setFirebaseStatus('chargement...', true);
+      setFirebaseStatus('chargement…', true);
       startRealtime();
       renderHome();
       setTimeout(showOpeningAlert, 400);
@@ -929,7 +924,6 @@
       const recent = state.transactions.slice(0, 5);
       tbody.innerHTML = recent.length ? recent.map(t =>
         '<tr><td>' + formatDate(t.date) + '</td><td>' + escapeHtml(t.type) +
-        (t.comment ? ' <span style="color:var(--text-muted);font-size:0.8rem">(' + escapeHtml(t.comment) + ')</span>' : '') +
         (t.source === 'fixed' ? '<span class="badge badge-fixed">fixe</span>' : '') +
         (t.source === 'budget' ? '<span class="badge badge-budget">budget</span>' : '') +
         '</td><td>' + formatMoney(t.amount) + '</td><td><span class="badge ' +
@@ -994,7 +988,7 @@
         if (amax != null && !isNaN(amax) && t.amount > amax) return false;
         if (from && t.date < from) return false;
         if (to && t.date > to) return false;
-        if (search && !(t.type + ' ' + t.amount + ' ' + t.date + ' ' + (t.comment || '')).toLowerCase().includes(search)) return false;
+        if (search && !(t.type + ' ' + t.amount + ' ' + t.date).toLowerCase().includes(search)) return false;
         return true;
       });
     }
@@ -1021,18 +1015,16 @@
       const sum = document.getElementById('filter-summary');
       if (sum) sum.textContent = filtered.length === all.length ? all.length + ' opération(s)' : filtered.length + ' sur ' + all.length;
       if (!filtered.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="empty">' + (all.length ? 'Aucun résultat' : 'Aucune opération') + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="empty">' + (all.length ? 'Aucun résultat' : 'Aucune opération') + '</td></tr>';
         return;
       }
       tbody.innerHTML = filtered.map(t => {
         let src = 'Manuel';
         if (t.source === 'fixed') src = '<span class="badge badge-fixed">Fixe</span>';
         if (t.source === 'budget') src = '<span class="badge badge-budget">Budget</span>';
-        const comment = t.comment ? escapeHtml(t.comment) : '—';
         return '<tr><td>' + formatDate(t.date) + '</td><td>' + escapeHtml(t.type) + '</td><td>' + formatMoney(t.amount) +
           '</td><td><span class="badge ' + (t.isDebit ? 'badge-charge">Débit' : 'badge-entree">Crédit') +
-          '</span></td><td>' + comment + '</td><td>' + src + '</td><td>' +
-          '<button class="btn btn-outline btn-sm" onclick="editTransaction(\'' + t.id + '\')">Modifier</button> ' +
+          '</span></td><td>' + src + '</td><td>' +
           '<button class="btn btn-danger btn-sm" onclick="deleteTransaction(\'' + t.id + '\')">Supprimer</button>' +
           '</td></tr>';
       }).join('');
@@ -1092,62 +1084,21 @@
       rows(state.reminders.filter(r => r.type === 'rdv').sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)), 'rdv-body', 'Aucun rendez-vous');
     }
 
-    function fillEntryTypeSelect(selected) {
-      const types = [...state.eventTypes];
-      if (selected && !types.includes(selected)) types.unshift(selected);
-      document.getElementById('entry-type').innerHTML = types.map(t =>
-        '<option value="' + escapeHtml(t) + '"' + (t === selected ? ' selected' : '') + '>' + escapeHtml(t) + '</option>'
-      ).join('') || '<option>Autre</option>';
-    }
-
     function openNewEntryModal() {
-      document.getElementById('entry-edit-id').value = '';
-      document.getElementById('entry-modal-title').textContent = 'Nouvelle entrée';
       document.getElementById('entry-date').value = todayISO();
       document.getElementById('entry-amount').value = '';
-      document.getElementById('entry-comment').value = '';
       document.getElementById('entry-debit').checked = true;
-      fillEntryTypeSelect();
+      document.getElementById('entry-type').innerHTML = state.eventTypes.map(t =>
+        '<option value="' + escapeHtml(t) + '">' + escapeHtml(t) + '</option>').join('') || '<option>Autre</option>';
       openModal('modal-entry');
     }
-
-    function editTransaction(id) {
-      const t = state.transactions.find(x => x.id === id);
-      if (!t) return;
-      document.getElementById('entry-edit-id').value = id;
-      document.getElementById('entry-modal-title').textContent = 'Modifier l\'opération';
-      document.getElementById('entry-date').value = t.date;
-      document.getElementById('entry-amount').value = t.amount;
-      document.getElementById('entry-comment').value = t.comment || '';
-      document.getElementById(t.isDebit ? 'entry-debit' : 'entry-credit').checked = true;
-      fillEntryTypeSelect(t.type);
-      openModal('modal-entry');
-    }
-
     function saveEntry() {
-      const id = document.getElementById('entry-edit-id').value;
       const date = document.getElementById('entry-date').value;
       const type = document.getElementById('entry-type').value;
       const amount = parseFloat(document.getElementById('entry-amount').value);
       const isDebit = document.getElementById('entry-debit').checked;
-      const comment = document.getElementById('entry-comment').value.trim();
       if (!date || !type || isNaN(amount) || amount <= 0) { alert('Champs invalides.'); return; }
-
-      if (id) {
-        const t = state.transactions.find(x => x.id === id);
-        if (t) {
-          t.date = date;
-          t.type = type;
-          t.amount = amount;
-          t.isDebit = isDebit;
-          t.comment = comment;
-          // source conservée (manual / fixed / budget)
-        }
-      } else {
-        state.transactions.push({
-          id: uid(), date, type, amount, isDebit, comment, source: 'manual'
-        });
-      }
+      state.transactions.push({ id: uid(), date, type, amount, isDebit, source: 'manual' });
       state.transactions.sort((a, b) => b.date.localeCompare(a.date));
       saveState();
       closeModal('modal-entry');
@@ -1347,14 +1298,14 @@
       showPage, openNewEntryModal, openFixedModal, openBudgetModal, openReminderModal,
       saveEntry, saveFixed, saveBudget, saveReminder,
       editFixed, editBudget, editReminder,
-      deleteFixed, deleteBudget, deleteReminder, deleteTransaction, editTransaction,
+      deleteFixed, deleteBudget, deleteReminder, deleteTransaction,
       syncAllAutomatic, saveInitialBalance, addEventType, removeEventType,
       resetAllData, closeModal, renderTracking, resetTrackingFilters,
       switchAuthTab, handleAuth, handleLogout
     });
 
     // Démarrage : attendre l'authentification puis RTDB
-    setFirebaseStatus('auth...', true);
+    setFirebaseStatus('auth…', true);
     onAuthStateChanged(auth, (user) => {
       if (user) {
         showApp(user);

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gestion CBR Famille</title>
+  <title>Gestion Compte & Budget</title>
   <style>
     :root {
       --primary: #2c5f8a;
@@ -213,7 +213,7 @@
 <body>
   <div id="login-screen">
     <div class="login-card">
-      <h2>Gestion CBR Famille</h2>
+      <h2>Gestion Compte & Budget</h2>
       <p class="subtitle">Connexion par e-mail (Firebase Auth)</p>
       <div class="login-error" id="login-error"></div>
       <div class="login-tabs">
@@ -237,7 +237,7 @@
 
   <div id="app-shell">
   <header>
-    <h1>Gestion CBR Famille</h1>
+    <h1>Gestion Compte & Budget</h1>
     <div class="user-bar" id="user-bar"></div>
     <nav>
       <button data-page="home" class="active">Accueil</button>
@@ -473,8 +473,8 @@
   </main>
 
   <footer>
-    Gestion CBR Famille — Firebase Realtime Database
-    <span id="firebase-status" style="margin-left:0.5rem;opacity:0.85">· connexion…</span>
+    Gestion Compte & Budget — Firebase Realtime Database
+    <span id="firebase-status" style="margin-left:0.5rem;opacity:0.85">· connexion...</span>
   </footer>
   </div><!-- /app-shell -->
 
@@ -493,7 +493,7 @@
         </div>
         <div class="form-group" style="grid-column:1/-1">
           <label for="entry-comment">Commentaire <span style="font-weight:400;color:var(--text-muted)">(optionnel)</span></label>
-          <input type="text" id="entry-comment" placeholder="Ex. : courses Carrefour, remboursement…">
+          <input type="text" id="entry-comment" placeholder="Ex. : courses Carrefour, remboursement...">
         </div>
       </div>
       <div class="modal-actions">
@@ -723,7 +723,7 @@
         return;
       }
       btn.disabled = true;
-      btn.textContent = 'Patientez…';
+      btn.textContent = 'Patientez...';
       try {
         if (authMode === 'register') {
           await createUserWithEmailAndPassword(auth, email, password);
@@ -772,7 +772,7 @@
         bar.innerHTML = escapeHtml(user.email || '') +
           ' <button type="button" onclick="handleLogout()">Déconnexion</button>';
       }
-      setFirebaseStatus('chargement…', true);
+      setFirebaseStatus('chargement...', true);
       startRealtime();
       renderHome();
       setTimeout(showOpeningAlert, 400);
@@ -1354,7 +1354,7 @@
     });
 
     // Démarrage : attendre l'authentification puis RTDB
-    setFirebaseStatus('auth…', true);
+    setFirebaseStatus('auth...', true);
     onAuthStateChanged(auth, (user) => {
       if (user) {
         showApp(user);
